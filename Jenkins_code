@@ -1,0 +1,42 @@
+---
+- hosts: localhost
+  user: ec2-user
+  become: yes
+
+  tasks:
+    - name: installing java in system
+      yum:
+        name: java-17-amazon-corretto.x86_64
+        state: present
+
+    - name: getting code from jenkins.io
+      ansible.builtin.get_url:
+        url: https://pkg.jenkins.io/redhat/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+
+    - name: rpm key downloading
+      ansible.builtin.rpm_key:
+        key: https://pkg.jenkins.io/redhat/jenkins.io-2023.key
+        state: present
+
+    - name: installing jenkins in slave
+      yum:
+        name: jenkins
+        state: present
+
+    - name: Jenkins Skip startUp for MI
+      lineinfile:
+        dest=/usr/lib/systemd/system/jenkins.service
+        regexp='^Environment="JAVA_OPTS=-Djava.awt.headless=true'
+        line='Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"'
+      register: result_skip_startup_wizard
+
+    - name: start the jenkins server
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Sleep for 30 seconds and continue with Jenkins buildout
+      wait_for:
+        timeout: 30
