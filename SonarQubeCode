@@ -1,0 +1,85 @@
+---
+- hosts: localhost
+  user: ec2-user
+  become: yes
+
+  tasks:
+    - name: Install Amazon Corretto 17
+      yum:
+        name: java-17-amazon-corretto
+        state: present
+
+    - name: Download SonarQube
+      get_url:
+        url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.9.0.65466.zip"
+        dest: "/opt/sonarqube.zip"
+
+    - name: Unzip SonarQube
+      unarchive:
+        src: "/opt/sonarqube.zip"
+        dest: "/opt/"
+        remote_src: yes
+
+    - name: Create a SonarQube user
+      user:
+        name: sonar
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Set ownership of SonarQube directory
+      file:
+        path: "/opt/sonarqube-9.9.0.65466"
+        owner: sonar
+        group: sonar
+        recurse: yes
+        mode: '0777'
+
+    - name: Set permissions for SonarQube directory
+      file:
+        path: "/opt/sonarqube-9.9.0.65466"
+        owner: sonar
+        group: sonar
+        mode: '0755'
+        recurse: yes
+
+    - name: Create systemd service for SonarQube
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=syslog.target network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/opt/sonarqube-9.9.0.65466/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonarqube-9.9.0.65466/bin/linux-x86-64/sonar.sh stop
+
+          User=sonar
+          Group=sonar
+          Restart=always
+
+          LimitNOFILE=65536
+          LimitNPROC=4096
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Reload systemd to recognize the SonarQube service
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable SonarQube to start on boot
+      systemd:
+        name: sonarqube
+        enabled: yes
+
+    - name: Start SonarQube service
+      systemd:
+        name: sonarqube
+        state: started
+
+    - name: Sleep for 30 seconds and continue with SonarQube
+      wait_for:
+        timeout: 30
