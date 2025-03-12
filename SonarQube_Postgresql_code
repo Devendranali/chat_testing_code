@@ -1,0 +1,156 @@
+---
+- hosts: localhost
+  become: yes
+  user: ec2-user
+  tasks:
+    - name: Install curl and ca-certificates
+      apt:
+        name:
+          - curl
+          - ca-certificates
+          - acl
+          - unzip
+        state: present
+        update_cache: yes
+
+    - name: Create directory for PostgreSQL common files
+      file:
+        path: /usr/share/postgresql-common/pgdg
+        state: directory
+        mode: "0755"
+
+    - name: Download PostgreSQL GPG key
+      get_url:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        dest: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+        mode: "0644"
+
+    - name: Create the repository configuration file
+      copy:
+        content: |
+          deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release | lower }}-pgdg main
+        dest: /etc/apt/sources.list.d/pgdg.list
+        mode: "0644"
+
+    - name: Update the apt package lists
+      apt:
+        update_cache: yes
+
+    - name: Install required PostgreSQL and Python packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - postgresql
+        - python3-psycopg2
+
+    - name: Start and enable PostgreSQL service
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Create SonarQube user for PostgreSQL
+      become_user: postgres
+      shell: |
+        psql -c "CREATE USER sonarqube WITH PASSWORD 'sonarqube';"
+
+    - name: Create SonarQube database for PostgreSQL
+      become_user: postgres
+      shell: |
+        createdb --owner=sonarqube sonarqube
+
+    - name: Install Amazon Corretto 17 (Java)
+      apt:
+        name: openjdk-17-jdk
+        state: present
+
+    - name: Download SonarQube
+      get_url:
+        url: https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.9.0.65466.zip
+        dest: /opt/sonarqube.zip
+
+    - name: Unzip SonarQube
+      unarchive:
+        src: /opt/sonarqube.zip
+        dest: /opt/
+        remote_src: yes
+
+    - name: Create a SonarQube user
+      user:
+        name: sonar
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Set ownership and permissions for SonarQube directory
+      file:
+        path: /opt/sonarqube-9.9.0.65466
+        owner: sonar
+        group: sonar
+        recurse: yes
+        mode: "0755"
+
+    - name: Create systemd service for SonarQube
+      copy:
+        dest: /etc/systemd/system/sonarqube.service
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=syslog.target network.target
+
+          [Service]
+          Type=forking
+          ExecStart=/opt/sonarqube-9.9.0.65466/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonarqube-9.9.0.65466/bin/linux-x86-64/sonar.sh stop
+          User=sonar
+          Group=sonar
+          Restart=always
+          LimitNOFILE=65536
+          LimitNPROC=4096
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: "0644"
+
+    - name: Reload systemd to recognize the SonarQube service
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable SonarQube to start on boot
+      systemd:
+        name: sonarqube
+        enabled: yes
+
+    # New steps to configure PostgreSQL for SonarQube (Before starting SonarQube)
+    - name: Update SonarQube database connection settings
+      lineinfile:
+        path: /opt/sonarqube-9.9.0.65466/conf/sonar.properties
+        regexp: '^#sonar.jdbc.url=.*'
+        line: 'sonar.jdbc.url=jdbc:postgresql://localhost:5432/sonarqube'
+        create: yes
+        state: present
+
+    - name: Set SonarQube database username
+      lineinfile:
+        path: /opt/sonarqube-9.9.0.65466/conf/sonar.properties
+        regexp: '^#sonar.jdbc.username=.*'
+        line: 'sonar.jdbc.username=sonarqube'
+        create: yes
+        state: present
+
+    - name: Set SonarQube database password
+      lineinfile:
+        path: /opt/sonarqube-9.9.0.65466/conf/sonar.properties
+        regexp: '^#sonar.jdbc.password=.*'
+        line: 'sonar.jdbc.password=sonarqube'
+        create: yes
+        state: present
+
+    - name: Start SonarQube service
+      systemd:
+        name: sonarqube
+        state: started
+
+    - name: Sleep for 30 seconds and continue with SonarQube
+      wait_for:
+        timeout: 30
