@@ -21,4 +21,20 @@ echo "Starting Jenkins service and enabling it to start on boot..."
 sudo systemctl start jenkins
 sudo systemctl enable jenkins
 
+# Task 6: Installing Git
+echo "Installing Git..."
+sudo yum install -y git
+
+# Task 7: Installing Maven
+echo "Installing Maven..."
+sudo yum install -y maven
+
+# Task 8: Installing Docker
+echo "Installing Docker..."
+sudo yum install -y docker
+
+# Task 9: Starting Docker service
+echo "Starting Docker service..."
+sudo systemctl start docker
+
 echo "All tasks completed successfully."
