@@ -6,11 +6,8 @@
 sudo apt-get update -y
  
 # install javajdk-17 for run the jenkins application
-sudo apt install openjdk-17-jdk -y
- 
-# install maven and unzip
-sudo apt install maven unzip -y
- 
+sudo apt install openjdk-21-jdk -y
+
 # set jenkins key 
 sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
   https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
